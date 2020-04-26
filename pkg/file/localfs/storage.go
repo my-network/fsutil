@@ -9,6 +9,7 @@ import (
 
 	"github.com/howeyc/fsnotify"
 	"github.com/my-network/fsutil/pkg/file"
+	"github.com/my-network/fsutil/pkg/file/utils"
 )
 
 var _ file.StorageWatchable = &Storage{}
@@ -35,16 +36,11 @@ func (stor *Storage) WorkDir() file.Path {
 }
 
 func (stor *Storage) Watch(
+	dirAt file.Directory,
 	path file.Path,
 	shouldMarkFunc file.ShouldWatchFunc,
 	shouldWalkFunc file.ShouldWalkFunc,
 ) (file.EventEmitter, error) {
-	obj, err := stor.Open(stor.ctx, nil, path, file.FlagRead|file.FlagPath, 0000)
-	if err != nil {
-		return nil, fmt.Errorf("unable to open '%s': %w",
-			path.LocalPath(), err)
-	}
-
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("unable to initialize a watcher backend: %w", err)
@@ -52,7 +48,7 @@ func (stor *Storage) Watch(
 
 	evEmitter := newEventEmitter(stor.ctx, stor, watcher)
 
-	err = evEmitter.Watch(obj, shouldMarkFunc, shouldWalkFunc)
+	err = evEmitter.Watch(dirAt, path, shouldMarkFunc, shouldWalkFunc)
 	if err != nil {
 		return nil, err
 	}
@@ -97,21 +93,22 @@ func (stor *Storage) Open(
 	flags file.OpenFlag,
 	defaultPerm os.FileMode,
 ) (file.Object, error) {
-	if dirAt != nil {
-		return nil, file.ErrNotImplemented{}
-	}
-
 	select {
 	case <-ctx.Done():
 		return nil, file.ErrAborted{}
 	default:
 	}
 
-	pathString := stor.ToLocalPath(path)
-	f, err := os.OpenFile(pathString, flags.OSFlags(), defaultPerm)
+	var f *os.File
+	var err error
+	if dirAt != nil {
+		f, err = utils.Openat(dirAt.FD(), path.LocalPath(), flags.OSFlags(), defaultPerm)
+	} else {
+		f, err = os.OpenFile(stor.ToLocalPath(path), flags.OSFlags(), defaultPerm)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("unable to open '%s': %w",
-			pathString, err)
+			path.LocalPath(), err)
 	}
 
 	select {
@@ -123,7 +120,7 @@ func (stor *Storage) Open(
 	fileInfo, err := f.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("unable to 'stat' on '%s': %w",
-			pathString, err)
+			path.LocalPath(), err)
 	}
 
 	obj := Object{
@@ -162,6 +159,7 @@ func (stor *Storage) Open(
 		}
 	}
 	return &Untyped{Object: obj}, nil
+
 }
 
 func (stor *Storage) Stat(

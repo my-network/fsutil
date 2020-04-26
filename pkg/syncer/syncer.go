@@ -117,6 +117,7 @@ func (syncer *Syncer) QueueRecursive(
 	return file.Walk(
 		ctx,
 		syncer.src,
+		nil,
 		path,
 		func(dir file.Directory, obj os.FileInfo) error {
 			return syncer.Queue(dir.Path().Append(obj.Name()))

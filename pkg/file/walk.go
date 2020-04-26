@@ -9,23 +9,37 @@ import (
 type CallbackFunc func(dir Directory, file os.FileInfo) error
 type ShouldWalkFunc func(dir Directory, file os.FileInfo) bool
 
+type curDirInfo struct {
+	os.FileInfo
+}
+
+func (info curDirInfo) Name() string {
+	return "."
+}
+
 func Walk(
 	ctx context.Context,
 	storage Storage,
-	root Path,
+	dirAt Directory,
+	path Path,
 	callback CallbackFunc,
 	shouldWalkFn ShouldWalkFunc,
 ) error {
-	dirObj, err := storage.Open(ctx, nil, root, FlagWalkDefaults, 0000)
+	dirObj, err := storage.Open(ctx, dirAt, path, FlagWalkDefaults, 0000)
 	if err != nil {
 		return fmt.Errorf("unable to open root '%s': %w",
-			root.LocalPath(), err)
+			path.LocalPath(), err)
 	}
 
 	dir, ok := dirObj.(Directory)
 	if !ok {
 		return fmt.Errorf("root '%s' is not a directory: %T",
-			root.LocalPath(), dirObj)
+			path.LocalPath(), dirObj)
+	}
+
+	err = callback(dir, curDirInfo{FileInfo: dir.LastStat()})
+	if err != nil {
+		return fmt.Errorf("got error from callback on '%s': %w", dir.Path().LocalPath(), err)
 	}
 
 	return walkDir(ctx, dir, callback, shouldWalkFn)

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"syscall"
@@ -112,20 +113,28 @@ func main() {
 	syncerInstance, err := syncer.NewSyncer(ctx, srcStorage, dstStorage, syncerCfg)
 	assertNoError(err)
 
-	eventEmitter, err := srcStorage.Watch(nil, nil, nil)
+	eventEmitter, err := srcStorage.Watch(nil, nil, nil, nil)
 	assertNoError(err)
 
 	go func() {
 		for {
 			select {
 			case ev := <-eventEmitter.C():
-				err := eventEmitter.Watch(ev.Object(), nil, nil)
-				if !isErrAbsent(err) {
+				fmt.Println("EVENT", ev.Path().LocalPath(), ev.Timestamp(), ev.TypeMask())
+				fileInfo, err := srcStorage.Stat(ctx, nil, ev.Path(), true)
+				assertNoError(err)
+				if fileInfo.IsDir() {
+					err := eventEmitter.Watch(nil, ev.Path(), nil, nil)
+					if !isErrAbsent(err) {
+						assertNoError(err)
+					}
+
+					err = syncerInstance.QueueRecursive(ctx, ev.Path(), nil)
+					assertNoError(err)
+				} else {
+					err = syncerInstance.Queue(ev.Path())
 					assertNoError(err)
 				}
-
-				err = syncerInstance.QueueRecursive(ctx, ev.Object().Path(), nil)
-				assertNoError(err)
 			}
 		}
 	}()

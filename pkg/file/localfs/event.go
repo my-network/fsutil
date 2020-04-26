@@ -9,13 +9,13 @@ import (
 var _ file.Event = &Event{}
 
 type Event struct {
-	ObjectValue    file.Object
+	PathValue      file.Path
 	TypeMaskValue  file.EventTypeMask
 	TimestampValue time.Time
 }
 
-func (ev *Event) Object() file.Object {
-	return ev.ObjectValue
+func (ev *Event) Path() file.Path {
+	return ev.PathValue
 }
 
 func (ev *Event) TypeMask() file.EventTypeMask {

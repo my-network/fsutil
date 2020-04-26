@@ -49,10 +49,9 @@ func (evEmitter *EventEmitter) pipelineLoop() {
 		select {
 		case ev := <-evEmitter.watcher.Event:
 			now := time.Now()
-			fmt.Println("EVENT", ev.Name, ev)
-			continue
+
 			evEmitter.eventChan <- &Event{
-				ObjectValue:    nil,
+				PathValue:      localToPath(ev.Name).RelativeTo(evEmitter.storage.workDir),
 				TypeMaskValue:  0,
 				TimestampValue: now,
 			}
@@ -72,13 +71,13 @@ func (evEmitter *EventEmitter) Close() error {
 }
 
 func (evEmitter *EventEmitter) Watch(
-	obj file.Object,
+	dirAt file.Directory,
+	path file.Path,
 	shouldWatchFunc file.ShouldWatchFunc,
 	shouldWalkFunc file.ShouldWalkFunc,
 ) error {
-	path := obj.Path()
-	if !obj.LastStat().IsDir() {
-		path = path[:len(path)-1]
+	if dirAt != nil {
+		return file.ErrNotImplemented{}
 	}
 
 	var watchErrors []error
@@ -86,16 +85,19 @@ func (evEmitter *EventEmitter) Watch(
 	err := file.Walk(
 		evEmitter.ctx,
 		evEmitter.storage,
+		nil,
 		path,
 		func(dir file.Directory, objectInfo os.FileInfo) error {
+			fmt.Printf("MARK? %v %v %v\n", dir.Path().LocalPath(), objectInfo.Name(), objectInfo.IsDir())
 			if !objectInfo.IsDir() {
 				return nil
 			}
 			if shouldWatchFunc != nil && !shouldWatchFunc(dir, objectInfo) {
 				return nil
 			}
-			pathLocal := dir.Path().Append(objectInfo.Name()).LocalPath()
+			pathLocal := dir.Storage().ToLocalPath(dir.Path().Append(objectInfo.Name()))
 			err := evEmitter.watcher.Watch(pathLocal)
+			fmt.Printf("MARK %v -> %v\n", pathLocal, err)
 			if err != nil {
 				watchErrors = append(watchErrors, fmt.Errorf("unable to mark '%s' to be watched: %w",
 					pathLocal, err))

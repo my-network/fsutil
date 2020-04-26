@@ -44,3 +44,7 @@ func (obj *Object) Close() error {
 func (obj *Object) Storage() file.Storage {
 	return obj.StorageValue
 }
+
+func (obj *Object) FD() uintptr {
+	return obj.Backend.Fd()
+}

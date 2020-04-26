@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/my-network/fsutil/pkg/mathutils"
 	"github.com/tinylib/msgp/msgp"
 )
 
@@ -56,4 +57,26 @@ func (p Path) Up() Path {
 	}
 
 	return p[:len(p)-1]
+}
+
+func (p Path) RelativeTo(root Path) Path {
+	minLen := mathutils.Min(len(p), len(root))
+	var matchUntilIdx int
+	for matchUntilIdx = 0; matchUntilIdx < minLen; matchUntilIdx++ {
+		if p[matchUntilIdx] != root[matchUntilIdx] {
+			break
+		}
+	}
+	pRest := p[matchUntilIdx:]
+	if matchUntilIdx == len(root) {
+		return pRest
+	}
+
+	rootRest := root[matchUntilIdx:]
+	result := make(Path, len(pRest)+len(rootRest))
+	for i := 0; i < len(rootRest); i++ {
+		result[i] = ".."
+	}
+	copy(result[len(rootRest):], pRest)
+	return result
 }

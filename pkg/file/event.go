@@ -13,7 +13,7 @@ const (
 )
 
 type Event interface {
-	Object() Object
+	Path() Path
 	Timestamp() time.Time
 	TypeMask() EventTypeMask
 }

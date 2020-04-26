@@ -18,6 +18,7 @@ type Object interface {
 	Chown(uid, gid int) error
 
 	Storage() Storage
+	FD() uintptr
 }
 
 type PathDescriptor interface {
