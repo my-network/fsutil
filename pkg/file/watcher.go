@@ -7,5 +7,5 @@ import (
 type ShouldWatchFunc func(Directory, os.FileInfo) bool
 
 type Watcher interface {
-	Watch(Directory, Path, ShouldWatchFunc, ShouldWalkFunc) (EventEmitter, error)
+	Watch(Directory, Path, ShouldWatchFunc, ShouldWalkFunc, ErrorHandlerFunc) (EventEmitter, error)
 }

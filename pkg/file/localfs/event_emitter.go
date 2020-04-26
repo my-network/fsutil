@@ -75,12 +75,15 @@ func (evEmitter *EventEmitter) Watch(
 	path file.Path,
 	shouldWatchFunc file.ShouldWatchFunc,
 	shouldWalkFunc file.ShouldWalkFunc,
+	errorHandler file.ErrorHandlerFunc,
 ) error {
+	if errorHandler == nil {
+		errorHandler = dummyErrorHandler
+	}
+
 	if dirAt != nil {
 		return file.ErrNotImplemented{}
 	}
-
-	var watchErrors []error
 
 	err := file.Walk(
 		evEmitter.ctx,
@@ -95,23 +98,25 @@ func (evEmitter *EventEmitter) Watch(
 			if shouldWatchFunc != nil && !shouldWatchFunc(dir, objectInfo) {
 				return nil
 			}
-			pathLocal := dir.Storage().ToLocalPath(dir.Path().Append(objectInfo.Name()))
-			err := evEmitter.watcher.Watch(pathLocal)
-			fmt.Printf("MARK %v -> %v\n", pathLocal, err)
+			pathFull := dir.Path().Append(objectInfo.Name())
+			pathFullLocal := dir.Storage().ToLocalPath(pathFull)
+			err := evEmitter.watcher.Watch(pathFullLocal)
+			fmt.Printf("MARK %v -> %v\n", pathFullLocal, err)
 			if err != nil {
-				watchErrors = append(watchErrors, fmt.Errorf("unable to mark '%s' to be watched: %w",
-					pathLocal, err))
+				if err := errorHandler(file.ErrWatchMark{Path: pathFull, Err: err}); err != nil {
+					return err
+				}
 			}
 			return nil
 		},
 		shouldWalkFunc,
+		errorHandler,
 	)
 
-	if err != nil || len(watchErrors) != 0 {
-		return &file.ErrCannotWatch{
-			Path:        path,
-			WalkError:   err,
-			WatchErrors: watchErrors,
+	if err != nil {
+		return &file.ErrWatch{
+			Path: path,
+			Err:  err,
 		}
 	}
 

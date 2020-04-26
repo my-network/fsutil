@@ -2,12 +2,12 @@ package file
 
 import (
 	"context"
-	"fmt"
 	"os"
 )
 
 type CallbackFunc func(dir Directory, file os.FileInfo) error
 type ShouldWalkFunc func(dir Directory, file os.FileInfo) bool
+type ErrorHandlerFunc func(error) error
 
 type curDirInfo struct {
 	os.FileInfo
@@ -17,6 +17,10 @@ func (info curDirInfo) Name() string {
 	return "."
 }
 
+func dummyErrorHandler(err error) error {
+	return err
+}
+
 func Walk(
 	ctx context.Context,
 	storage Storage,
@@ -24,25 +28,35 @@ func Walk(
 	path Path,
 	callback CallbackFunc,
 	shouldWalkFn ShouldWalkFunc,
+	errorHandlerFn ErrorHandlerFunc,
 ) error {
+	if errorHandlerFn == nil {
+		errorHandlerFn = dummyErrorHandler
+	}
+
 	dirObj, err := storage.Open(ctx, dirAt, path, FlagWalkDefaults, 0000)
 	if err != nil {
-		return fmt.Errorf("unable to open root '%s': %w",
-			path.LocalPath(), err)
+		if err := errorHandlerFn(ErrWalkOpen{Dir: nil, Child: nil, Err: err}); err != nil {
+			return err
+		}
 	}
 
 	dir, ok := dirObj.(Directory)
 	if !ok {
-		return fmt.Errorf("root '%s' is not a directory: %T",
-			path.LocalPath(), dirObj)
+		if err := errorHandlerFn(ErrWalkNotDir{Dir: dir, Child: dir}); err != nil {
+			return err
+		}
 	}
 
-	err = callback(dir, curDirInfo{FileInfo: dir.LastStat()})
+	dirInfo := curDirInfo{FileInfo: dir.LastStat()}
+	err = callback(dir, dirInfo)
 	if err != nil {
-		return fmt.Errorf("got error from callback on '%s': %w", dir.Path().LocalPath(), err)
+		if err := errorHandlerFn(ErrWalkCallback{Dir: dir, Child: dirInfo, Err: err}); err != nil {
+			return err
+		}
 	}
 
-	return walkDir(ctx, dir, callback, shouldWalkFn)
+	return walkDir(ctx, dir, callback, shouldWalkFn, errorHandlerFn)
 }
 
 func walkDir(
@@ -50,15 +64,20 @@ func walkDir(
 	dir Directory,
 	callback CallbackFunc,
 	shouldWalkFn ShouldWalkFunc,
+	errorHandlerFn ErrorHandlerFunc,
 ) error {
 	children, err := dir.Readdir(-1)
 	if err != nil {
-		return fmt.Errorf("unable to get children of path '%s': %w", dir.Path().LocalPath(), err)
+		if err = errorHandlerFn(ErrGetChildrenInfo{Dir: dir, Err: err}); err != nil {
+			return err
+		}
 	}
 	for _, childInfo := range children {
 		err = callback(dir, childInfo)
 		if err != nil {
-			return fmt.Errorf("got error from callback on '%s': %w", dir.Path().LocalPath(), err)
+			if err := errorHandlerFn(ErrWalkCallback{Dir: dir, Child: childInfo, Err: err}); err != nil {
+				return err
+			}
 		}
 
 		if !childInfo.IsDir() {
@@ -70,17 +89,19 @@ func walkDir(
 
 		childObj, err := dir.Open(ctx, Path{childInfo.Name()}, FlagWalkDefaults, 0000)
 		if err != nil {
-			return fmt.Errorf("unable to open child '%s' of '%s': %w",
-				childInfo.Name(), dir.Path().LocalPath(), err)
+			if err := errorHandlerFn(ErrWalkOpen{Dir: dir, Child: childInfo, Err: err}); err != nil {
+				return err
+			}
 		}
 
 		child, ok := childObj.(Directory)
 		if !ok {
-			return fmt.Errorf("child '%s' of '%s' is not a directory: %T",
-				childInfo.Name(), dir.Path().LocalPath(), childObj)
+			if err := errorHandlerFn(ErrWalkNotDir{Dir: dir, Child: childObj}); err != nil {
+				return err
+			}
 		}
 
-		err = walkDir(ctx, child, callback, shouldWalkFn)
+		err = walkDir(ctx, child, callback, shouldWalkFn, errorHandlerFn)
 		if err != nil {
 			return err
 		}

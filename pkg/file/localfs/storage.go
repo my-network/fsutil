@@ -9,7 +9,7 @@ import (
 
 	"github.com/howeyc/fsnotify"
 	"github.com/my-network/fsutil/pkg/file"
-	"github.com/my-network/fsutil/pkg/file/utils"
+	"github.com/my-network/fsutil/pkg/file/extras"
 )
 
 var _ file.StorageWatchable = &Storage{}
@@ -40,6 +40,7 @@ func (stor *Storage) Watch(
 	path file.Path,
 	shouldMarkFunc file.ShouldWatchFunc,
 	shouldWalkFunc file.ShouldWalkFunc,
+	errorHandlerFunc file.ErrorHandlerFunc,
 ) (file.EventEmitter, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -48,7 +49,7 @@ func (stor *Storage) Watch(
 
 	evEmitter := newEventEmitter(stor.ctx, stor, watcher)
 
-	err = evEmitter.Watch(dirAt, path, shouldMarkFunc, shouldWalkFunc)
+	err = evEmitter.Watch(dirAt, path, shouldMarkFunc, shouldWalkFunc, errorHandlerFunc)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +103,7 @@ func (stor *Storage) Open(
 	var f *os.File
 	var err error
 	if dirAt != nil {
-		f, err = utils.Openat(dirAt.FD(), path.LocalPath(), flags.OSFlags(), defaultPerm)
+		f, err = extras.Openat(dirAt.FD(), path.LocalPath(), flags.OSFlags(), defaultPerm)
 	} else {
 		f, err = os.OpenFile(stor.ToLocalPath(path), flags.OSFlags(), defaultPerm)
 	}

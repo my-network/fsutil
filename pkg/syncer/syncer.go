@@ -113,6 +113,7 @@ func (syncer *Syncer) QueueRecursive(
 	ctx context.Context,
 	path file.Path,
 	shouldWalkFn file.ShouldWalkFunc,
+	errHandlerFn file.ErrorHandlerFunc,
 ) error {
 	return file.Walk(
 		ctx,
@@ -123,6 +124,7 @@ func (syncer *Syncer) QueueRecursive(
 			return syncer.Queue(dir.Path().Append(obj.Name()))
 		},
 		shouldWalkFn,
+		errHandlerFn,
 	)
 }
 

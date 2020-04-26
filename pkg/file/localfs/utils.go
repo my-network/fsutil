@@ -21,3 +21,7 @@ func localToPathBytes(b []byte) file.Path {
 func localToPath(s string) file.Path {
 	return strings.Split(s, string(filepath.Separator))
 }
+
+func dummyErrorHandler(err error) error {
+	return err
+}

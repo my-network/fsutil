@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/my-network/fsutil/pkg/file"
 	"github.com/my-network/fsutil/pkg/file/cached"
 	"github.com/my-network/fsutil/pkg/file/localfs"
 	"github.com/my-network/fsutil/pkg/syncer"
@@ -27,8 +28,28 @@ func assertNoError(err error) {
 	log.Panic(err)
 }
 
-func isErrAbsent(err error) bool {
-	return false
+func walkErrorHandler(err error) error {
+	switch err := err.(type) {
+	case file.ErrWalkNotDir:
+		return nil
+	case file.ErrWalkOpen:
+		if os.IsNotExist(err) {
+			return nil
+		}
+	}
+	return err
+}
+
+func watchErrorHandler(err error) error {
+	switch err := err.(type) {
+	case file.ErrWatchMark:
+		if os.IsNotExist(err) {
+			return nil
+		}
+	default:
+		return walkErrorHandler(err)
+	}
+	return err
 }
 
 func main() {
@@ -113,7 +134,7 @@ func main() {
 	syncerInstance, err := syncer.NewSyncer(ctx, srcStorage, dstStorage, syncerCfg)
 	assertNoError(err)
 
-	eventEmitter, err := srcStorage.Watch(nil, nil, nil, nil)
+	eventEmitter, err := srcStorage.Watch(nil, nil, nil, nil, watchErrorHandler)
 	assertNoError(err)
 
 	go func() {
@@ -124,12 +145,12 @@ func main() {
 				fileInfo, err := srcStorage.Stat(ctx, nil, ev.Path(), true)
 				assertNoError(err)
 				if fileInfo.IsDir() {
-					err := eventEmitter.Watch(nil, ev.Path(), nil, nil)
-					if !isErrAbsent(err) {
+					err := eventEmitter.Watch(nil, ev.Path(), nil, nil, watchErrorHandler)
+					if !os.IsNotExist(err) {
 						assertNoError(err)
 					}
 
-					err = syncerInstance.QueueRecursive(ctx, ev.Path(), nil)
+					err = syncerInstance.QueueRecursive(ctx, ev.Path(), nil, walkErrorHandler)
 					assertNoError(err)
 				} else {
 					err = syncerInstance.Queue(ev.Path())
@@ -140,7 +161,7 @@ func main() {
 	}()
 
 	if !*skipInitialSync {
-		err := syncerInstance.QueueRecursive(ctx, nil, nil)
+		err := syncerInstance.QueueRecursive(ctx, nil, nil, walkErrorHandler)
 		assertNoError(err)
 	}
 
