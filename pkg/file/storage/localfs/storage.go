@@ -9,7 +9,7 @@ import (
 
 	"github.com/howeyc/fsnotify"
 	"github.com/my-network/fsutil/pkg/file"
-	"github.com/my-network/fsutil/pkg/file/extras"
+	"github.com/my-network/fsutil/pkg/file/event"
 )
 
 var _ file.StorageWatchable = &Storage{}
@@ -38,10 +38,10 @@ func (stor *Storage) WorkDir() file.Path {
 func (stor *Storage) Watch(
 	dirAt file.Directory,
 	path file.Path,
-	shouldMarkFunc file.ShouldWatchFunc,
+	shouldMarkFunc event.ShouldWatchFunc,
 	shouldWalkFunc file.ShouldWalkFunc,
 	errorHandlerFunc file.ErrorHandlerFunc,
-) (file.EventEmitter, error) {
+) (event.Emitter, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("unable to initialize a watcher backend: %w", err)
@@ -103,7 +103,7 @@ func (stor *Storage) Open(
 	var f *os.File
 	var err error
 	if dirAt != nil {
-		f, err = extras.Openat(dirAt.FD(), path.LocalPath(), flags.OSFlags(), defaultPerm)
+		f, err = port.Openat(dirAt.FD(), path.LocalPath(), flags.OSFlags(), defaultPerm)
 	} else {
 		f, err = os.OpenFile(stor.ToLocalPath(path), flags.OSFlags(), defaultPerm)
 	}

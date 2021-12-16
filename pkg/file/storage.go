@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"time"
+
+	"github.com/my-network/fsutil/pkg/file/event"
 )
 
 type Storage interface {
@@ -28,5 +30,5 @@ type Storage interface {
 
 type StorageWatchable interface {
 	Storage
-	Watcher
+	event.Watcher
 }

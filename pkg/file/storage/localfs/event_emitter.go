@@ -9,9 +9,10 @@ import (
 
 	"github.com/howeyc/fsnotify"
 	"github.com/my-network/fsutil/pkg/file"
+	"github.com/my-network/fsutil/pkg/file/event"
 )
 
-var _ file.EventEmitter = &EventEmitter{}
+var _ event.Emitter = &EventEmitter{}
 
 type EventEmitter struct {
 	ctx       context.Context
@@ -19,14 +20,14 @@ type EventEmitter struct {
 	storage   *Storage
 	watcher   *fsnotify.Watcher
 	wg        sync.WaitGroup
-	eventChan chan file.Event
+	eventChan chan event.Event
 }
 
 func newEventEmitter(ctx context.Context, storage *Storage, watcher *fsnotify.Watcher) *EventEmitter {
 	evEmitter := &EventEmitter{
 		storage:   storage,
 		watcher:   watcher,
-		eventChan: make(chan file.Event, 1<<16),
+		eventChan: make(chan event.Event, 1<<16),
 	}
 	evEmitter.ctx, evEmitter.cancelFn = context.WithCancel(ctx)
 	evEmitter.initPipeline()
@@ -50,17 +51,37 @@ func (evEmitter *EventEmitter) pipelineLoop() {
 		case ev := <-evEmitter.watcher.Event:
 			now := time.Now()
 
-			evEmitter.eventChan <- &Event{
-				PathValue:      localToPath(ev.Name).RelativeTo(evEmitter.storage.workDir),
-				TypeMaskValue:  0,
-				TimestampValue: now,
+			var evTypeMask event.TypeMask
+			if ev.IsCreate() {
+				evTypeMask |= event.TypeCreate
+			}
+			if ev.IsModify() {
+				evTypeMask |= event.TypeWrite | event.TypeOpenWrite | event.TypeCloseWrite
+			}
+			if ev.IsDelete() {
+				evTypeMask |= event.TypeDelete
+			}
+			if ev.IsRename() {
+				evTypeMask |= event.TypeMove
+			}
+			if ev.IsAttrib() {
+				evTypeMask |= event.TypeAttrib
+			}
+
+			evEmitter.eventChan <- &event.Event{
+				ObjID:     nil,
+				Path:      localToPath(ev.Name).RelativeTo(evEmitter.storage.workDir),
+				TypeMask:  evTypeMask,
+				Timestamp: now,
+				Range:     nil,
+				MovedTo:   nil,
 			}
 		case <-evEmitter.ctx.Done():
 		}
 	}
 }
 
-func (evEmitter *EventEmitter) C() <-chan file.Event {
+func (evEmitter *EventEmitter) C() <-chan event.Event {
 	return evEmitter.eventChan
 }
 
@@ -73,7 +94,7 @@ func (evEmitter *EventEmitter) Close() error {
 func (evEmitter *EventEmitter) Watch(
 	dirAt file.Directory,
 	path file.Path,
-	shouldWatchFunc file.ShouldWatchFunc,
+	shouldWatchFunc event.ShouldWatchFunc,
 	shouldWalkFunc file.ShouldWalkFunc,
 	errorHandler file.ErrorHandlerFunc,
 ) error {

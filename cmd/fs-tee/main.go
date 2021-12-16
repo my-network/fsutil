@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/my-network/fsutil/pkg/file"
-	"github.com/my-network/fsutil/pkg/file/cached"
-	"github.com/my-network/fsutil/pkg/file/localfs"
+	"github.com/my-network/fsutil/pkg/file/storage/cached"
+	"github.com/my-network/fsutil/pkg/file/storage/localfs"
 	"github.com/my-network/fsutil/pkg/syncer"
 )
 
@@ -33,7 +33,7 @@ func walkErrorHandler(err error) error {
 	case file.ErrWalkNotDir:
 		return nil
 	case file.ErrWalkOpen:
-		if os.IsNotExist(err) {
+		if file.IsNotExist(err) {
 			return nil
 		}
 	}
@@ -43,7 +43,7 @@ func walkErrorHandler(err error) error {
 func watchErrorHandler(err error) error {
 	switch err := err.(type) {
 	case file.ErrWatchMark:
-		if os.IsNotExist(err) {
+		if file.IsNotExist(err) {
 			return nil
 		}
 	default:
@@ -146,9 +146,7 @@ func main() {
 				assertNoError(err)
 				if fileInfo.IsDir() {
 					err := eventEmitter.Watch(nil, ev.Path(), nil, nil, watchErrorHandler)
-					if !os.IsNotExist(err) {
-						assertNoError(err)
-					}
+					assertNoError(err)
 
 					err = syncerInstance.QueueRecursive(ctx, ev.Path(), nil, walkErrorHandler)
 					assertNoError(err)

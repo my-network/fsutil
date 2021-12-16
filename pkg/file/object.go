@@ -8,6 +8,8 @@ import (
 )
 
 type Object interface {
+	ID() interface{}
+
 	Path() Path
 	Name() string
 

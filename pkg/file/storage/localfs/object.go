@@ -8,6 +8,11 @@ import (
 
 type Backend = *os.File
 
+type ObjectIDUNIX struct {
+	Dev uint64
+	Ino uint64
+}
+
 type Object struct {
 	Backend
 	StorageValue *Storage

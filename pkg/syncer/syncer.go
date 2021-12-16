@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/howeyc/fsnotify"
 	"github.com/my-network/fsutil/pkg/file"
+	"github.com/my-network/fsutil/pkg/file/event"
 )
 
 type Syncer struct {
@@ -34,7 +32,7 @@ func NewSyncer(ctx context.Context, src, dst file.Storage, cfg *Config) (*Syncer
 	}
 	err := syncer.init()
 	if err != nil {
-		return nil, fmt.Errorf("unable to initialize the run-context: %w", err)
+		return nil, fmt.Errorf("unable to initialize the syncer: %w", err)
 	}
 	return syncer, nil
 }
@@ -50,37 +48,51 @@ func (syncer *Syncer) init() error {
 		syncer.config.AggregationTimeMax = syncer.config.AggregationTimeMin
 	}
 
+	err := syncer.initTaskStorage()
+	if err != nil {
+		return fmt.Errorf("unable to initialize a task storage: %w", err)
+	}
+
+	err = syncer.initEventProcessor()
+	if err != nil {
+		return fmt.Errorf("unable to initialize an event processor: %w", err)
+	}
+
+	err = syncer.initCopier()
+	if err != nil {
+		return fmt.Errorf("unable to initialize a copier: %w", err)
+	}
+
+	return nil
+}
+
+func (syncer *Syncer) initTaskStorage() error {
 	var err error
 	syncer.taskStorage, err = newTaskStorage(syncer.config)
 	if err != nil {
-		return fmt.Errorf("unable to initialize an event storage: %w", err)
+		return fmt.Errorf("unable to create a task storage: %w", err)
 	}
+
 	syncer.wg.Add(1)
 	go func() {
 		defer syncer.wg.Done()
 		<-syncer.ctx.Done()
 		_ = syncer.taskStorage.Close()
 	}()
-
-	err = syncer.initSyncer()
-	if err != nil {
-		return fmt.Errorf("unable to initialize a syncer: %w", err)
-	}
-
 	return nil
 }
 
-func (syncer *Syncer) initSyncer() error {
+func (syncer *Syncer) initCopier() error {
 	syncer.wg.Add(1)
 	go func() {
 		defer syncer.wg.Done()
-		syncer.syncerLoop()
+		syncer.copierLoop()
 	}()
 
 	return nil
 }
 
-func (syncer *Syncer) syncerLoop() {
+func (syncer *Syncer) copierLoop() {
 	for {
 		select {
 		case fileEvent := <-syncer.taskStorage.ExpiredChan:
@@ -93,10 +105,6 @@ func (syncer *Syncer) syncerLoop() {
 
 func (syncer *Syncer) Wait() {
 	syncer.wg.Wait()
-}
-
-func isErrAbsent(err error) bool {
-	return false
 }
 
 func (syncer *Syncer) Queue(path file.Path) error {
@@ -143,7 +151,7 @@ func (syncer *Syncer) warmupForSync(path file.Path) error {
 	}
 	obj, err := syncer.src.Open(syncer.ctx, nil, path, file.FlagRead, 0000)
 	if err != nil {
-		if isErrAbsent(err) {
+		if file.IsNotExist(err) {
 			syncer.config.SyncLogger.Debugf("file '%s' disappeared, skipping",
 				path.LocalPath())
 			return nil
@@ -160,12 +168,11 @@ func (syncer *Syncer) warmupForSync(path file.Path) error {
 	return nil
 }
 
-func (syncer *Syncer) queueEventsFromChannel(inChan chan *fsnotify.FileEvent) {
+func (syncer *Syncer) eventProcessorLoop(inChan chan event.Event) {
 	for {
 		select {
 		case fileEvent := <-inChan:
-			path := strings.Split(fileEvent.Name, string(filepath.Separator))
-			err := syncer.Queue(path)
+			err := syncer.Queue(fileEvent.Path)
 			if err != nil {
 				panic(err)
 			}
@@ -173,4 +180,13 @@ func (syncer *Syncer) queueEventsFromChannel(inChan chan *fsnotify.FileEvent) {
 			return
 		}
 	}
+}
+
+func (syncer *Syncer) initEventProcessor() error {
+	syncer.
+		syncer.wg.Add(1)
+	go func() {
+		defer syncer.wg.Done()
+		syncer.eventProcessorLoop()
+	}()
 }
